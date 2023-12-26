@@ -20,9 +20,9 @@ pub mod taskon {
     use super::*;
 
     //将管理员私钥保存到链上
-    pub fn initialize(ctx: Context<Initialize>, admin_pub_key: Pubkey) -> Result<()> {
+    pub fn initialize(ctx: Context<Initialize>, pubkey: [u8;32]) -> Result<()> {
         let admin = &mut ctx.accounts.admin;
-        admin.signer = admin_pub_key;
+        admin.signer = Pubkey::new(pubkey.as_ref());
         Ok(())
     }
 
@@ -65,7 +65,7 @@ pub mod taskon {
                     to: ctx.accounts.user_x_token.to_account_info(),
                     authority: ctx.accounts.escrow.to_account_info(),
                 },
-                &[&["taskon".as_bytes(), ctx.accounts.user.key().as_ref(), &[ctx.accounts.escrow.bump]]],
+                &[&["taskon".as_bytes(), ctx.accounts.escrow.authority.key().as_ref(), &[ctx.accounts.escrow.bump]]],
             ),
             amount,
         )?;
