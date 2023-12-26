@@ -14,10 +14,12 @@ describe("taskon", () => {
 
   const projectParty =  provider.wallet.publicKey; // anchor.web3.Keypair.generate();
   const payer = (provider.wallet as NodeWallet).payer;
-  const  admin =  (provider.wallet as NodeWallet).payer;
 
   const user =  anchor.web3.Keypair.generate();
   console.log(`user :: `, user.publicKey.toString());
+
+    const admin =  anchor.web3.Keypair.generate();
+    console.log(`admin :: `, admin.publicKey.toString());
 
   const escrowedXTokens = anchor.web3.Keypair.generate();
   console.log(`escrowedXTokens :: `, escrowedXTokens.publicKey.toString());
@@ -59,16 +61,17 @@ describe("taskon", () => {
     console.log(`user_x_token :: `, user_x_token.toString());
   })
 
-
   it("Is initialized!", async () => {
     // Add your test here.
-    const tx = await program.methods.initialize(admin.publicKey.toBytes())
+    const tx = await program.methods.initialize(admin.publicKey)
         .accounts({
-          deployer: payer.publicKey,
+          user: payer.publicKey,
           admin: admin.publicKey,
           rent: SYSVAR_RENT_PUBKEY,
           systemProgram: anchor.web3.SystemProgram.programId
-        }).rpc();
+        }).signers([payer]).rpc().catch((err) =>{
+            console.log("err:",err);
+        });
     console.log("Your transaction signature", tx);
   });
 });

@@ -20,9 +20,14 @@ pub mod taskon {
     use super::*;
 
     //将管理员私钥保存到链上
-    pub fn initialize(ctx: Context<Initialize>, pubkey: [u8;32]) -> Result<()> {
-        let admin = &mut ctx.accounts.admin;
-        admin.signer = Pubkey::new(pubkey.as_ref());
+    pub fn initialize(ctx: Context<Initialize>, pubkey: Pubkey) -> Result<()> {
+        msg!("{}","11111");
+        let admin = &mut ctx.accounts.admin_signer;
+        msg!("2222");
+        admin.authority = *ctx.accounts.user.key;
+        msg!("3333");
+        admin.signer = pubkey;
+        msg!("4444");
         Ok(())
     }
 
@@ -84,31 +89,27 @@ pub enum TaskonError {
 // taskon 管理员初始化合约， 会保存服务器的singer publicKey到链上
 #[derive(Accounts)]
 pub struct Initialize<'info> {
+    // 签名以及付款用户
     #[account(mut)]
-    deployer: Signer<'info>,
+    pub user: Signer<'info>,
 
-    #[account(
-    init,
-    payer = deployer,
-    space = AdminSigner::LEN,
-    )]
-    pub admin: Account<'info, AdminSigner>,
-
-    rent: Sysvar<'info, Rent>,
-    system_program: Program<'info, System>,
+    #[account(init, payer = user, space = AdminSigner::LEN)]
+    pub admin_signer: Account<'info, AdminSigner>,
+    pub rent: Sysvar<'info, Rent>,
+    pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
 pub struct Deposit<'info> {
     /// `seller`, who is willing to sell his token_x for token_y
     #[account(mut)]
-    project_party: Signer<'info>,
+    pub project_party: Signer<'info>,
     /// Token x mint for ex. USDC
-    x_mint: Account<'info, Mint>,
+    pub x_mint: Account<'info, Mint>,
 
     /// ATA of x_mint
     #[account(mut, constraint = project_party_x_token.mint == x_mint.key() && project_party_x_token.owner == project_party.key())]
-    project_party_x_token: Account<'info, TokenAccount>,
+    pub project_party_x_token: Account<'info, TokenAccount>,
 
     #[account(
     init,
@@ -125,19 +126,19 @@ pub struct Deposit<'info> {
     token::mint = x_mint,
     token::authority = escrow,
     )]
-    escrowed_x_tokens: Account<'info, TokenAccount>,
+    pub escrowed_x_tokens: Account<'info, TokenAccount>,
 
-    token_program: Program<'info, Token>,
-    rent: Sysvar<'info, Rent>,
-    system_program: Program<'info, System>,
+    pub token_program: Program<'info, Token>,
+    pub rent: Sysvar<'info, Rent>,
+    pub system_program: Program<'info, System>,
 }
 
 
 #[account]
 pub struct Escrow {
-    authority: Pubkey,
-    bump: u8,
-    escrowed_x_tokens: Pubkey,
+    pub authority: Pubkey,
+    pub bump: u8,
+    pub escrowed_x_tokens: Pubkey,
 }
 
 impl Escrow {
@@ -147,11 +148,12 @@ impl Escrow {
 //用来存储 后台签名管理员的公钥
 #[account]
 pub struct AdminSigner {
-    signer: Pubkey,
+    pub authority: Pubkey,
+    pub signer: Pubkey,
 }
 
 impl AdminSigner {
-    pub const LEN: usize = 8 + 32;
+    pub const LEN: usize = 8 + 32 + 32;
 }
 
 #[derive(Accounts)]
@@ -169,7 +171,7 @@ pub struct Withdraw<'info> {
     pub escrowed_x_tokens: Account<'info, TokenAccount>,
 
     #[account(mut, constraint = user_x_token.owner == user.key())]
-    user_x_token: Account<'info, TokenAccount>,
+    pub user_x_token: Account<'info, TokenAccount>,
 
-    token_program: Program<'info, Token>,
+    pub token_program: Program<'info, Token>,
 }
