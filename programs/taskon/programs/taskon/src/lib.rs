@@ -19,32 +19,34 @@ declare_id!("BBpT4XAm4XzvfyhXbxhREudv3Za1zMyYw7roXHdd9qT9");
 pub mod taskon {
     use super::*;
 
+    const ESCROW_PDA_SEED: &[u8] = b"taskon";
+
+
     //将管理员私钥保存到链上
-    pub fn initialize(ctx: Context<Initialize>, pubkey: Pubkey) -> Result<()> {
-        msg!("{}","11111");
-        let admin = &mut ctx.accounts.admin_signer;
-        msg!("2222");
-        admin.authority = *ctx.accounts.user.key;
-        msg!("3333");
-        admin.signer = pubkey;
-        msg!("4444");
+    pub fn initialize(ctx: Context<Initialize>, nonce: u64) -> Result<()> {
+        let admin = &mut ctx.accounts.taskon_signer;
+        admin.taskon_signer = ctx.accounts.user.key().clone();
+        admin.nonce = nonce;
         Ok(())
     }
 
-    pub fn deposit(ctx: Context<Deposit>, x_amount: u64) -> Result<()> {
+    pub fn deposit(ctx: Context<DepositToken>, x_amount: u64) -> Result<()> {
         let escrow = &mut ctx.accounts.escrow;
-        escrow.bump = *ctx.bumps.get("taskon").unwrap();
-        escrow.authority = ctx.accounts.project_party.key();
+
+        let (pda, _bump_seed) = Pubkey::find_program_address(&[ESCROW_PDA_SEED], ctx.program_id);
+        escrow.authority = pda;
         escrow.escrowed_x_tokens = ctx.accounts.escrowed_x_tokens.key();
+
+        // let (pda, _bump_seed) = Pubkey::find_program_address(&[ESCROW_PDA_SEED], ctx.program_id);
 
         // Transfer seller's x_token in program owned escrow token account
         anchor_spl::token::transfer(
             CpiContext::new(
                 ctx.accounts.token_program.to_account_info(),
                 anchor_spl::token::Transfer {
-                    from: ctx.accounts.project_party_x_token.to_account_info(),
+                    from: ctx.accounts.business_x_token.to_account_info(),
                     to: ctx.accounts.escrowed_x_tokens.to_account_info(),
-                    authority: ctx.accounts.project_party.to_account_info(),
+                    authority: ctx.accounts.business.to_account_info(),
                 },
             ),
             x_amount,
@@ -61,6 +63,10 @@ pub mod taskon {
         //校验管理员签名
         require!(keccak(&[pk.0.as_ref()]).0 == signer, TaskonError::InvalidSigner);
 
+        let (_pda, bump_seed) = Pubkey::find_program_address(&[ESCROW_PDA_SEED], ctx.program_id);
+        let seeds = &[&ESCROW_PDA_SEED[..], &[bump_seed]];
+
+
         //给用户打token
         anchor_spl::token::transfer(
             CpiContext::new_with_signer(
@@ -70,7 +76,7 @@ pub mod taskon {
                     to: ctx.accounts.user_x_token.to_account_info(),
                     authority: ctx.accounts.escrow.to_account_info(),
                 },
-                &[&["taskon".as_bytes(), ctx.accounts.escrow.authority.key().as_ref(), &[ctx.accounts.escrow.bump]]],
+                &[&seeds[..]],
             ),
             amount,
         )?;
@@ -89,47 +95,37 @@ pub enum TaskonError {
 // taskon 管理员初始化合约， 会保存服务器的singer publicKey到链上
 #[derive(Accounts)]
 pub struct Initialize<'info> {
-    // 签名以及付款用户
+    #[account(init, payer = user, space = AdminSigner::LEN)]
+    pub taskon_signer: Account<'info, AdminSigner>,
     #[account(mut)]
     pub user: Signer<'info>,
-
-    #[account(init, payer = user, space = AdminSigner::LEN)]
-    pub admin_signer: Account<'info, AdminSigner>,
-    pub rent: Sysvar<'info, Rent>,
     pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
-pub struct Deposit<'info> {
-    /// `seller`, who is willing to sell his token_x for token_y
+pub struct DepositToken<'info> {
+    /// 项目方
     #[account(mut)]
-    pub project_party: Signer<'info>,
+    pub business: Signer<'info>,
     /// Token x mint for ex. USDC
     pub x_mint: Account<'info, Mint>,
 
     /// ATA of x_mint
-    #[account(mut, constraint = project_party_x_token.mint == x_mint.key() && project_party_x_token.owner == project_party.key())]
-    pub project_party_x_token: Account<'info, TokenAccount>,
+    #[account(mut, constraint = business_x_token.mint == x_mint.key() && business_x_token.owner == business.key())]
+    pub business_x_token: Account<'info, TokenAccount>,
 
-    #[account(
-    init,
-    payer = project_party,
-    space = Escrow::LEN,
-    seeds = ["escrow".as_bytes(), project_party.key().as_ref()],
-    bump,
-    )]
+    #[account(init, payer = business, space = Escrow::LEN)]
     pub escrow: Account<'info, Escrow>,
 
     #[account(
     init,
-    payer = project_party,
+    payer = business,
     token::mint = x_mint,
     token::authority = escrow,
     )]
     pub escrowed_x_tokens: Account<'info, TokenAccount>,
 
     pub token_program: Program<'info, Token>,
-    pub rent: Sysvar<'info, Rent>,
     pub system_program: Program<'info, System>,
 }
 
@@ -137,34 +133,29 @@ pub struct Deposit<'info> {
 #[account]
 pub struct Escrow {
     pub authority: Pubkey,
-    pub bump: u8,
     pub escrowed_x_tokens: Pubkey,
 }
 
 impl Escrow {
-    pub const LEN: usize = 8 + 1 + 32 + 32;
+    pub const LEN: usize = 8 + 32 + 32;
 }
 
 //用来存储 后台签名管理员的公钥
 #[account]
 pub struct AdminSigner {
-    pub authority: Pubkey,
-    pub signer: Pubkey,
+    pub nonce: u64,
+    pub taskon_signer: Pubkey,
 }
 
 impl AdminSigner {
-    pub const LEN: usize = 8 + 32 + 32;
+    pub const LEN: usize = 8 + 8 + 32;
 }
 
 #[derive(Accounts)]
 pub struct Withdraw<'info> {
     pub user: Signer<'info>,
 
-    #[account(
-    mut,
-    seeds = ["taskon".as_bytes(), escrow.authority.as_ref()],
-    bump = escrow.bump,
-    )]
+    #[account(mut)]
     pub escrow: Account<'info, Escrow>,
 
     #[account(mut, constraint = escrowed_x_tokens.key() == escrow.escrowed_x_tokens)]
